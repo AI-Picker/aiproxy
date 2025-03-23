@@ -10,6 +10,22 @@ import (
 var ModelList = []*model.ModelConfig{
 	// 通义千问-Max
 	{
+		Model: "farui-plus",
+		Type:  mode.ChatCompletions,
+		Owner: model.ModelOwnerAlibaba,
+		Price: model.Price{
+			InputPrice:  0.02,
+			OutputPrice: 0.02,
+		},
+		RPM: 600,
+		Config: model.NewModelConfig(
+			model.WithModelConfigMaxContextTokens(12000),
+			model.WithModelConfigMaxInputTokens(12000),
+			model.WithModelConfigMaxOutputTokens(2000),
+			model.WithModelConfigToolChoice(false),
+		),
+	},
+	{
 		Model: "qwen-max",
 		Type:  mode.ChatCompletions,
 		Owner: model.ModelOwnerAlibaba,
