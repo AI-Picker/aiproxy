@@ -33,6 +33,9 @@ func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
 	case mode.ImagesGenerations:
 		return u + "/api/v1/services/aigc/text2image/image-synthesis", nil
 	case mode.ChatCompletions:
+		if meta.ActualModel == "farui-plus" {
+			return u + "/api/v1/services/aigc/text-generation/generation", nil
+		}
 		return u + "/compatible-mode/v1/chat/completions", nil
 	case mode.Completions:
 		return u + "/compatible-mode/v1/completions", nil
@@ -89,7 +92,11 @@ func (a *Adaptor) DoResponse(meta *meta.Meta, c *gin.Context, resp *http.Respons
 	case mode.ImagesGenerations:
 		usage, err = ImageHandler(meta, c, resp)
 	case mode.ChatCompletions, mode.Completions, mode.Embeddings:
-		usage, err = openai.DoResponse(meta, c, resp)
+		if meta.ActualModel == "farui-plus" {
+			usage, err = DoFaruiResponse(meta, c, resp)
+		} else {
+			usage, err = openai.DoResponse(meta, c, resp)
+		}
 	case mode.Rerank:
 		usage, err = RerankHandler(meta, c, resp)
 	case mode.AudioSpeech:
