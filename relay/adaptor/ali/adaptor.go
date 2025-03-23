@@ -64,6 +64,9 @@ func (a *Adaptor) ConvertRequest(meta *meta.Meta, req *http.Request) (string, ht
 	case mode.Rerank:
 		return ConvertRerankRequest(meta, req)
 	case mode.ChatCompletions, mode.Completions, mode.Embeddings:
+		if meta.ActualModel == "farui-plus" {
+			return ConvertFaruiRequest(meta, req)
+		}
 		return openai.ConvertRequest(meta, req)
 	case mode.AudioSpeech:
 		return ConvertTTSRequest(meta, req)
