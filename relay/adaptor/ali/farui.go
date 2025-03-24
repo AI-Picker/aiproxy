@@ -172,12 +172,26 @@ func convertFaruiResponse(lastContent string, line string) (any, *model.Usage, s
 	if err := json.Unmarshal([]byte(line), &response); err != nil {
 		return nil, nil, "", err
 	}
-	content := strings.TrimLeft(response.Output.Choices[0].Message.Content, lastContent)
+	// 计算delta
+	runes1 := []rune(response.Output.Choices[0].Message.Content)
+	runes2 := []rune(lastContent)
+	delta := ""
+	for i := range runes1 {
+		if i >= len(runes2) {
+			delta += string(runes1[i])
+			continue
+		}
+		if runes1[i] == runes2[i] {
+			continue
+		}
+		delta += string(runes1[i])
+	}
+
 	openaiResponse := map[string]any{
 		"choices": []map[string]any{
 			{
 				"delta": map[string]any{
-					"content": content,
+					"content": delta,
 				},
 				"finish_reason": response.Output.Choices[0].FinishReason,
 				"index":         0,
