@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -119,12 +118,15 @@ func Handler(meta *meta.Meta, c *gin.Context, resp *http.Response) (*model.Usage
 	if err != nil {
 		return nil, openai.ErrorWrapper(err, "unmarshal_response_body_failed", http.StatusInternalServerError)
 	}
+	node = *node.Get("output")
 
-	usage, choices, err := GetUsageOrChoicesResponseFromNode(&node)
+	usage, choices, err := openai.GetUsageOrChoicesResponseFromNode(&node)
 	if err != nil {
 		return nil, openai.ErrorWrapper(err, "unmarshal_response_body_failed2", http.StatusInternalServerError)
 	}
-
+	if usage == nil {
+		usage = &model.Usage{}
+	}
 	if usage.TotalTokens == 0 || (usage.PromptTokens == 0 && usage.CompletionTokens == 0) {
 		completionTokens := 0
 		for _, choice := range choices {
@@ -166,63 +168,52 @@ func Handler(meta *meta.Meta, c *gin.Context, resp *http.Response) (*model.Usage
 	return usage, nil
 }
 
-func GetUsageOrChoicesResponseFromNode(node *ast.Node) (*model.Usage, []*model.TextResponseChoice, error) {
-	var usage *model.Usage
-	usageNode, err := node.Get("usage").Raw()
-	if err != nil {
-		if !errors.Is(err, ast.ErrNotExist) {
-			return nil, nil, err
-		}
-	} else {
-		var usageMap struct {
-			TotalTokens  int `json:"total_tokens"`
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-		}
-		err = sonic.UnmarshalString(usageNode, &usageMap)
-		if err != nil {
-			return nil, nil, err
-		}
-		usage = &model.Usage{
-			PromptTokens:     usageMap.InputTokens,
-			CompletionTokens: usageMap.OutputTokens,
-			TotalTokens:      usageMap.TotalTokens,
-		}
-	}
+// func GetUsageOrChoicesResponseFromNode(node *ast.Node) (*model.Usage, []*model.TextResponseChoice, error) {
+// 	var usage *model.Usage
+// 	usageNode, err := node.Get("usage").Raw()
+// 	if err != nil {
+// 		if !errors.Is(err, ast.ErrNotExist) {
+// 			return nil, nil, err
+// 		}
+// 	} else {
+// 		var usageMap struct {
+// 			TotalTokens  int `json:"total_tokens"`
+// 			InputTokens  int `json:"input_tokens"`
+// 			OutputTokens int `json:"output_tokens"`
+// 		}
+// 		err = sonic.UnmarshalString(usageNode, &usageMap)
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
+// 		usage = &model.Usage{
+// 			PromptTokens:     usageMap.InputTokens,
+// 			CompletionTokens: usageMap.OutputTokens,
+// 			TotalTokens:      usageMap.TotalTokens,
+// 		}
+// 	}
 
-	if usage != nil {
-		return usage, nil, nil
-	}
+// 	if usage != nil {
+// 		return usage, nil, nil
+// 	}
 
-	var choices []*model.TextResponseChoice
-	choicesNode, err := node.Get("output").Raw()
-	if err != nil {
-		if !errors.Is(err, ast.ErrNotExist) {
-			return nil, nil, err
-		}
-	} else {
-		var output struct {
-			Text         string `json:"text"`
-			FinishReason string `json:"finish_reason"`
-		}
-		err = sonic.UnmarshalString(choicesNode, &output)
-		if err != nil {
-			return nil, nil, err
-		}
-		choices = []*model.TextResponseChoice{
-			{
-				Index:        0,
-				Text:         output.Text,
-				FinishReason: output.FinishReason,
-				Message: model.Message{
-					Role:    "assistant",
-					Content: output.Text,
-				},
-			},
-		}
-	}
-	return nil, choices, nil
-}
+// 	var choices []*model.TextResponseChoice
+// 	choicesNode, err := node.Get("output").Raw()
+// 	if err != nil {
+// 		if !errors.Is(err, ast.ErrNotExist) {
+// 			return nil, nil, err
+// 		}
+// 	} else {
+// 		var output struct {
+// 			Choices []*model.TextResponseChoice `json:"choices"`
+// 		}
+// 		err = sonic.UnmarshalString(choicesNode, &output)
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
+// 		choices = output.Choices
+// 	}
+// 	return nil, choices, nil
+// }
 
 func StreamHandler(meta *meta.Meta, c *gin.Context, resp *http.Response) (*model.Usage, *model.ErrorWithStatusCode) {
 	if resp.StatusCode != http.StatusOK {
