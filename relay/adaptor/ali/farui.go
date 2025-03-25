@@ -168,53 +168,6 @@ func Handler(meta *meta.Meta, c *gin.Context, resp *http.Response) (*model.Usage
 	return usage, nil
 }
 
-// func GetUsageOrChoicesResponseFromNode(node *ast.Node) (*model.Usage, []*model.TextResponseChoice, error) {
-// 	var usage *model.Usage
-// 	usageNode, err := node.Get("usage").Raw()
-// 	if err != nil {
-// 		if !errors.Is(err, ast.ErrNotExist) {
-// 			return nil, nil, err
-// 		}
-// 	} else {
-// 		var usageMap struct {
-// 			TotalTokens  int `json:"total_tokens"`
-// 			InputTokens  int `json:"input_tokens"`
-// 			OutputTokens int `json:"output_tokens"`
-// 		}
-// 		err = sonic.UnmarshalString(usageNode, &usageMap)
-// 		if err != nil {
-// 			return nil, nil, err
-// 		}
-// 		usage = &model.Usage{
-// 			PromptTokens:     usageMap.InputTokens,
-// 			CompletionTokens: usageMap.OutputTokens,
-// 			TotalTokens:      usageMap.TotalTokens,
-// 		}
-// 	}
-
-// 	if usage != nil {
-// 		return usage, nil, nil
-// 	}
-
-// 	var choices []*model.TextResponseChoice
-// 	choicesNode, err := node.Get("output").Raw()
-// 	if err != nil {
-// 		if !errors.Is(err, ast.ErrNotExist) {
-// 			return nil, nil, err
-// 		}
-// 	} else {
-// 		var output struct {
-// 			Choices []*model.TextResponseChoice `json:"choices"`
-// 		}
-// 		err = sonic.UnmarshalString(choicesNode, &output)
-// 		if err != nil {
-// 			return nil, nil, err
-// 		}
-// 		choices = output.Choices
-// 	}
-// 	return nil, choices, nil
-// }
-
 func StreamHandler(meta *meta.Meta, c *gin.Context, resp *http.Response) (*model.Usage, *model.ErrorWithStatusCode) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, openai.ErrorHanlder(resp)
