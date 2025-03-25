@@ -4,11 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/bytedance/sonic"
+	"github.com/bytedance/sonic/ast"
 	"github.com/gin-gonic/gin"
 	"github.com/labring/aiproxy/common"
 	"github.com/labring/aiproxy/common/render"
@@ -89,10 +92,132 @@ func DoFaruiResponse(meta *meta.Meta, c *gin.Context, resp *http.Response) (usag
 	if utils.IsStreamResponse(resp) || true {
 		usage, err = StreamHandler(meta, c, resp)
 	} else {
-		// 非流式，暂未实现
-		// usage, err = Handler(meta, c, resp, nil)
+		usage, err = Handler(meta, c, resp)
 	}
 	return
+}
+
+func Handler(meta *meta.Meta, c *gin.Context, resp *http.Response) (*model.Usage, *model.ErrorWithStatusCode) {
+	if resp.StatusCode != http.StatusOK {
+		return nil, openai.ErrorHanlder(resp)
+	}
+
+	defer resp.Body.Close()
+
+	log := middleware.GetLogger(c)
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, openai.ErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
+	}
+
+	node, err := sonic.Get(responseBody)
+	if err != nil {
+		return nil, openai.ErrorWrapper(err, "unmarshal_response_body_failed", http.StatusInternalServerError)
+	}
+
+	usage, choices, err := GetUsageOrChoicesResponseFromNode(&node)
+	if err != nil {
+		return nil, openai.ErrorWrapper(err, "unmarshal_response_body_failed", http.StatusInternalServerError)
+	}
+
+	if usage.TotalTokens == 0 || (usage.PromptTokens == 0 && usage.CompletionTokens == 0) {
+		completionTokens := 0
+		for _, choice := range choices {
+			if choice.Text != "" {
+				completionTokens += openai.CountTokenText(choice.Text, meta.ActualModel)
+				continue
+			}
+			completionTokens += openai.CountTokenText(choice.Message.StringContent(), meta.ActualModel)
+		}
+		usage = &model.Usage{
+			PromptTokens:     meta.InputTokens,
+			CompletionTokens: completionTokens,
+		}
+	}
+	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+
+	_, err = node.Set("model", ast.NewString(meta.OriginModel))
+	if err != nil {
+		return usage, openai.ErrorWrapper(err, "set_model_failed", http.StatusInternalServerError)
+	}
+
+	if meta.ChannelConfig.SplitThink {
+		respMap, err := node.Map()
+		if err != nil {
+			return usage, openai.ErrorWrapper(err, "unmarshal_response_body_failed", http.StatusInternalServerError)
+		}
+		openai.SplitThink(respMap)
+	}
+
+	newData, err := sonic.Marshal(&node)
+	if err != nil {
+		return usage, openai.ErrorWrapper(err, "marshal_response_body_failed", http.StatusInternalServerError)
+	}
+
+	_, err = c.Writer.Write(newData)
+	if err != nil {
+		log.Warnf("write response body failed: %v", err)
+	}
+	return usage, nil
+}
+
+func GetUsageOrChoicesResponseFromNode(node *ast.Node) (*model.Usage, []*model.TextResponseChoice, error) {
+	var usage *model.Usage
+	usageNode, err := node.Get("usage").Raw()
+	if err != nil {
+		if !errors.Is(err, ast.ErrNotExist) {
+			return nil, nil, err
+		}
+	} else {
+		var usageMap struct {
+			TotalTokens  int `json:"total_tokens"`
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		}
+		err = sonic.UnmarshalString(usageNode, &usageMap)
+		if err != nil {
+			return nil, nil, err
+		}
+		usage = &model.Usage{
+			PromptTokens:     usageMap.InputTokens,
+			CompletionTokens: usageMap.OutputTokens,
+			TotalTokens:      usageMap.TotalTokens,
+		}
+	}
+
+	if usage != nil {
+		return usage, nil, nil
+	}
+
+	var choices []*model.TextResponseChoice
+	choicesNode, err := node.Get("output").Raw()
+	if err != nil {
+		if !errors.Is(err, ast.ErrNotExist) {
+			return nil, nil, err
+		}
+	} else {
+		var output struct {
+			Text         string `json:"text"`
+			FinishReason string `json:"finish_reason"`
+		}
+		err = sonic.UnmarshalString(choicesNode, &output)
+		if err != nil {
+			return nil, nil, err
+		}
+		choices = []*model.TextResponseChoice{
+			{
+				Index:        0,
+				Text:         output.Text,
+				FinishReason: output.FinishReason,
+				Message: model.Message{
+					Role:    "assistant",
+					Content: output.Text,
+				},
+			},
+		}
+	}
+	return nil, choices, nil
 }
 
 func StreamHandler(meta *meta.Meta, c *gin.Context, resp *http.Response) (*model.Usage, *model.ErrorWithStatusCode) {
