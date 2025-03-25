@@ -88,6 +88,7 @@ func ConvertFaruiRequest(meta *meta.Meta, req *http.Request) (string, http.Heade
 	if requestBody.Stream {
 		req.Header.Set("X-DashScope-SSE", "enable")
 	}
+	req.Header.Del("Accept-Encoding")
 	return req.Method, req.Header, bytes.NewReader(jsonData), nil
 }
 
@@ -121,7 +122,7 @@ func Handler(meta *meta.Meta, c *gin.Context, resp *http.Response) (*model.Usage
 
 	usage, choices, err := GetUsageOrChoicesResponseFromNode(&node)
 	if err != nil {
-		return nil, openai.ErrorWrapper(err, "unmarshal_response_body_failed", http.StatusInternalServerError)
+		return nil, openai.ErrorWrapper(err, "unmarshal_response_body_failed2", http.StatusInternalServerError)
 	}
 
 	if usage.TotalTokens == 0 || (usage.PromptTokens == 0 && usage.CompletionTokens == 0) {
