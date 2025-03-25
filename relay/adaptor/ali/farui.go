@@ -84,12 +84,15 @@ func ConvertFaruiRequest(meta *meta.Meta, req *http.Request) (string, http.Heade
 	if err != nil {
 		return "", nil, nil, err
 	}
-	req.Header.Set("X-DashScope-SSE", "enable")
+	// 是否流式
+	if requestBody.Stream {
+		req.Header.Set("X-DashScope-SSE", "enable")
+	}
 	return req.Method, req.Header, bytes.NewReader(jsonData), nil
 }
 
 func DoFaruiResponse(meta *meta.Meta, c *gin.Context, resp *http.Response) (usage *relaymodel.Usage, err *relaymodel.ErrorWithStatusCode) {
-	if utils.IsStreamResponse(resp) || true {
+	if utils.IsStreamResponse(resp) {
 		usage, err = StreamHandler(meta, c, resp)
 	} else {
 		usage, err = Handler(meta, c, resp)
@@ -267,7 +270,7 @@ func StreamHandler(meta *meta.Meta, c *gin.Context, resp *http.Response) (*model
 	}
 	render.Done(c)
 
-	if usage.TotalTokens != 0 && usage.PromptTokens == 0 { // some channels don't return prompt tokens & completion tokens
+	if usage != nil && usage.TotalTokens != 0 && usage.PromptTokens == 0 { // some channels don't return prompt tokens & completion tokens
 		usage.PromptTokens = meta.InputTokens
 		usage.CompletionTokens = usage.TotalTokens - meta.InputTokens
 	}
